@@ -230,7 +230,7 @@ function afficherSuggestions(inputId, suggestionsId, horsCirco, listeChoisie, re
   input.addEventListener('input', () => {
     if (!document.getElementById('circonscription').value) {
       box.style.display = 'block';
-      box.innerHTML = '<div class="vide">Choisissez d\\'abord une circonscription ci-dessus.</div>';
+      box.innerHTML = "<div class=\"vide\">Choisissez d'abord une circonscription ci-dessus.</div>";
       return;
     }
     const resultats = rechercherEcoles(input.value, { horsCirco });
@@ -382,7 +382,7 @@ async function enregistrer() {
   const ecoles = document.getElementById('ecoles').value.trim();
 
   if (!nomOdrt || !dateOdrt || !circId) {
-    afficherMessage('Merci de renseigner au minimum le nom de l\\'ODRT, la date et la circonscription.', false);
+    afficherMessage("Merci de renseigner au minimum le nom de l'ODRT, la date et la circonscription.", false);
     return;
   }
 
@@ -453,7 +453,7 @@ async function enregistrer() {
     viderFormulaire();
   } catch (e) {
     console.error(e);
-    afficherMessage('Erreur lors de l\\'enregistrement : ' + (e.message || e), false);
+    afficherMessage("Erreur lors de l'enregistrement : " + (e.message || e), false);
   } finally {
     btn.disabled = false;
   }
