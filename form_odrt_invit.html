@@ -132,7 +132,7 @@
 <h2>Saisie d'une réunion ODRT et de ses partenaires à inviter</h2>
 
 <label>Nom de l'ODRT</label>
-<input id="nomOdrt" type="text" placeholder="ex. ODRT Chtneuf Thym - session 1">
+<input id="nomOdrt" type="text" placeholder="ex. ODRT THYM - session 1">
 
 <div class="row2">
   <div>
@@ -155,9 +155,6 @@
     <select id="circonscription"><option value="">Chargement...</option></select>
   </div>
 </div>
-
-<label>Écoles concernées</label>
-<textarea id="ecoles" placeholder="Une école par ligne, ou séparées par des virgules"></textarea>
 
 <h3>Écoles à inviter (circonscription sélectionnée ci-dessus)</h3>
 <div class="recherche-ecole">
@@ -243,7 +240,7 @@ function afficherSuggestions(inputId, suggestionsId, horsCirco, listeChoisie, re
     box.innerHTML = '';
     resultats.forEach(e => {
       const div = document.createElement('div');
-      div.textContent = `${e.libelle_ecole} (${e.uai_ecole})${horsCirco ? ' — ' + e.libelle_circo : ''}`;
+      div.textContent = `${e.type_ecole} - ${e.libelle_ecole} (${e.uai_ecole}) — ${e.libelle_circo}`;
       div.addEventListener('click', () => {
         if (!listeChoisie.some(x => x.rowId === e.rowId)) {
           listeChoisie.push(e);
@@ -267,7 +264,7 @@ function rerenderChipsCirco() {
   ecolesCircoChoisies.forEach(e => {
     const chip = document.createElement('div');
     chip.className = 'chip';
-    chip.innerHTML = `<span>${e.libelle_ecole} (${e.uai_ecole})</span>`;
+    chip.innerHTML = `<span>${e.type_ecole} - ${e.libelle_ecole} (${e.uai_ecole}) — ${e.libelle_circo}</span>`;
     const btn = document.createElement('button');
     btn.textContent = '✕';
     btn.addEventListener('click', () => {
@@ -286,7 +283,7 @@ function rerenderChipsHors() {
   ecolesHorsChoisies.forEach(e => {
     const chip = document.createElement('div');
     chip.className = 'chip hors';
-    chip.innerHTML = `<span>${e.libelle_ecole} (${e.uai_ecole}) — ${e.libelle_circo}</span>`;
+    chip.innerHTML = `<span>${e.type_ecole} - ${e.libelle_ecole} (${e.uai_ecole}) — ${e.libelle_circo}</span>`;
     const btn = document.createElement('button');
     btn.textContent = '✕';
     btn.addEventListener('click', () => {
@@ -339,7 +336,6 @@ function viderFormulaire() {
   document.getElementById('horaire').value = '';
   document.getElementById('lieu').value = '';
   document.getElementById('circonscription').value = '';
-  document.getElementById('ecoles').value = '';
   document.getElementById('partenaires').innerHTML = '';
   blocCount = 0;
   ajouterBlocPartenaire();
@@ -379,7 +375,6 @@ async function enregistrer() {
   const horaire = document.getElementById('horaire').value.trim();
   const lieu = document.getElementById('lieu').value.trim();
   const circId = document.getElementById('circonscription').value;
-  const ecoles = document.getElementById('ecoles').value.trim();
 
   if (!nomOdrt || !dateOdrt || !circId) {
     afficherMessage("Merci de renseigner au minimum le nom de l'ODRT, la date et la circonscription.", false);
@@ -416,7 +411,6 @@ async function enregistrer() {
         Horaire: horaire,
         Lieu: lieu,
         Circonscription: parseInt(circId, 10),
-        Ecoles_concernees: ecoles,
       }],
     ]);
     const reunionRowId = resultReunion.retValues[0];
