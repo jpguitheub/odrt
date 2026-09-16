@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Saisie ODRT</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+    background: #f7f7f9;
+    color: #1a1a1a;
+  }
+  h2 { margin-top: 0; font-size: 18px; }
+  h3 { font-size: 15px; margin: 24px 0 10px; border-top: 1px solid #ddd; padding-top: 16px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 10px 0 4px; }
+  input, select, textarea {
+    width: 100%;
+    padding: 7px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+  textarea { resize: vertical; min-height: 50px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .partenaire-block {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+    position: relative;
+  }
+  .partenaire-block .titre {
+    font-weight: 700;
+    font-size: 13px;
+    color: #2952a3;
+    margin-bottom: 6px;
+  }
+  .partenaire-fields { display: grid; grid-template-columns: 1fr 1fr 1fr 1.3fr 1fr auto; gap: 8px; align-items: end; }
+  .btn-remove {
+    background: #e05252;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 7px 10px;
+    cursor: pointer;
+    font-size: 13px;
+    height: 34px;
+  }
+  .btn-add {
+    background: #2952a3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 9px 14px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-top: 6px;
+  }
+  .btn-submit {
+    background: #1a8a3d;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 11px 18px;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+    margin-top: 24px;
+    width: 100%;
+  }
+  .btn-submit:disabled { background: #9ccaa9; cursor: not-allowed; }
+  #message {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+    display: none;
+  }
+  #message.ok { background: #e3f7e9; color: #1a8a3d; display: block; }
+  #message.err { background: #fbe6e6; color: #b3261e; display: block; }
+  .compteur { font-size: 12px; color: #666; margin-top: 4px; }
+
+  .recherche-ecole { position: relative; margin-bottom: 6px; }
+  .suggestions {
+    position: absolute;
+    z-index: 10;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    width: 100%;
+    max-height: 220px;
+    overflow-y: auto;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+  }
+  .suggestions div {
+    padding: 7px 10px;
+    cursor: pointer;
+    font-size: 13px;
+    border-bottom: 1px solid #eee;
+  }
+  .suggestions div:hover { background: #eef2fb; }
+  .suggestions .vide { color: #888; cursor: default; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip {
+    background: #eef2fb;
+    border: 1px solid #c3d0ee;
+    border-radius: 14px;
+    padding: 5px 8px 5px 12px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .chip.hors { background: #fbeee6; border-color: #eec9a8; }
+  .chip button {
+    background: none;
+    border: none;
+    color: #b3261e;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+  }
+</style>
+</head>
+<body>
+
+<h2>Saisie d'une réunion ODRT et de ses partenaires à inviter</h2>
+
+<label>Nom de l'ODRT</label>
+<input id="nomOdrt" type="text" placeholder="ex. ODRT Blois Nord - session 1">
+
+<div class="row2">
+  <div>
+    <label>Date (jj-mm-aaaa)</label>
+    <input id="dateOdrt" type="date">
+  </div>
+  <div>
+    <label>Horaire (ex. 14h-16h30)</label>
+    <input id="horaire" type="text" placeholder="14h-16h30">
+  </div>
+</div>
+
+<div class="row2">
+  <div>
+    <label>Lieu</label>
+    <input id="lieu" type="text">
+  </div>
+  <div>
+    <label>Circonscription</label>
+    <select id="circonscription"><option value="">Chargement...</option></select>
+  </div>
+</div>
+
+<label>Écoles concernées</label>
+<textarea id="ecoles" placeholder="Une école par ligne, ou séparées par des virgules"></textarea>
+
+<h3>Écoles à inviter (circonscription sélectionnée ci-dessus)</h3>
+<div class="recherche-ecole">
+  <input type="text" id="rechercheEcoleCirco" placeholder="Tapez le nom ou l'UAI de l'école...">
+  <div class="suggestions" id="suggestionsCirco" style="display:none;"></div>
+</div>
+<div class="chips" id="chipsCirco"></div>
+
+<h3>École(s) hors circonscription à inviter</h3>
+<div class="recherche-ecole">
+  <input type="text" id="rechercheEcoleHors" placeholder="Tapez le nom ou l'UAI de l'école...">
+  <div class="suggestions" id="suggestionsHors" style="display:none;"></div>
+</div>
+<div class="chips" id="chipsHors"></div>
+
+<h3>Partenaires à inviter</h3>
+<div id="partenaires"></div>
+<button class="btn-add" id="btnAdd" type="button">+ Ajouter un partenaire</button>
+<div class="compteur" id="compteur"></div>
+
+<button class="btn-submit" id="btnSubmit" type="button">Enregistrer cette réunion et ses partenaires</button>
+<div id="message"></div>
+
+<script>
+let circonscriptionsById = {};
+let toutesLesEcoles = [];
+let ecolesCircoChoisies = [];   // {rowId, libelle_ecole, uai_ecole}
+let ecolesHorsChoisies = [];
+let blocCount = 0;
+
+function normaliser(txt) {
+  return (txt || '').toString().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+async function chargerEcoles() {
+  const table = await grist.docApi.fetchTable('Ecoles');
+  toutesLesEcoles = table.id.map((rowId, i) => ({
+    rowId,
+    uai_ecole: table.uai_ecole[i],
+    libelle_ecole: table.libelle_ecole[i],
+    type_ecole: table.type_ecole[i],
+    uai_circo: table.uai_circo[i],
+    libelle_circo: table.libelle_circo[i],
+  }));
+}
+
+function uaiCircoSelectionne() {
+  const circId = document.getElementById('circonscription').value;
+  if (!circId) return null;
+  const info = circonscriptionsById[circId];
+  return info ? info.uaiCirco : null;
+}
+
+function rechercherEcoles(texte, { horsCirco }) {
+  const uaiCirco = uaiCircoSelectionne();
+  if (!uaiCirco) return [];
+  const q = normaliser(texte);
+  if (!q) return [];
+  return toutesLesEcoles
+    .filter(e => horsCirco ? e.uai_circo !== uaiCirco : e.uai_circo === uaiCirco)
+    .filter(e => normaliser(e.libelle_ecole).includes(q) || normaliser(e.uai_ecole).includes(q))
+    .slice(0, 20);
+}
+
+function afficherSuggestions(inputId, suggestionsId, horsCirco, listeChoisie, rerenderChips) {
+  const input = document.getElementById(inputId);
+  const box = document.getElementById(suggestionsId);
+
+  input.addEventListener('input', () => {
+    if (!document.getElementById('circonscription').value) {
+      box.style.display = 'block';
+      box.innerHTML = '<div class="vide">Choisissez d\\'abord une circonscription ci-dessus.</div>';
+      return;
+    }
+    const resultats = rechercherEcoles(input.value, { horsCirco });
+    if (input.value.trim() === '') { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    if (resultats.length === 0) {
+      box.innerHTML = '<div class="vide">Aucune école trouvée.</div>';
+      return;
+    }
+    box.innerHTML = '';
+    resultats.forEach(e => {
+      const div = document.createElement('div');
+      div.textContent = `${e.libelle_ecole} (${e.uai_ecole})${horsCirco ? ' — ' + e.libelle_circo : ''}`;
+      div.addEventListener('click', () => {
+        if (!listeChoisie.some(x => x.rowId === e.rowId)) {
+          listeChoisie.push(e);
+          rerenderChips();
+        }
+        input.value = '';
+        box.style.display = 'none';
+      });
+      box.appendChild(div);
+    });
+  });
+
+  document.addEventListener('click', (evt) => {
+    if (!box.contains(evt.target) && evt.target !== input) box.style.display = 'none';
+  });
+}
+
+function rerenderChipsCirco() {
+  const zone = document.getElementById('chipsCirco');
+  zone.innerHTML = '';
+  ecolesCircoChoisies.forEach(e => {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.innerHTML = `<span>${e.libelle_ecole} (${e.uai_ecole})</span>`;
+    const btn = document.createElement('button');
+    btn.textContent = '✕';
+    btn.addEventListener('click', () => {
+      const idx = ecolesCircoChoisies.findIndex(x => x.rowId === e.rowId);
+      if (idx !== -1) ecolesCircoChoisies.splice(idx, 1);
+      rerenderChipsCirco();
+    });
+    chip.appendChild(btn);
+    zone.appendChild(chip);
+  });
+}
+
+function rerenderChipsHors() {
+  const zone = document.getElementById('chipsHors');
+  zone.innerHTML = '';
+  ecolesHorsChoisies.forEach(e => {
+    const chip = document.createElement('div');
+    chip.className = 'chip hors';
+    chip.innerHTML = `<span>${e.libelle_ecole} (${e.uai_ecole}) — ${e.libelle_circo}</span>`;
+    const btn = document.createElement('button');
+    btn.textContent = '✕';
+    btn.addEventListener('click', () => {
+      const idx = ecolesHorsChoisies.findIndex(x => x.rowId === e.rowId);
+      if (idx !== -1) ecolesHorsChoisies.splice(idx, 1);
+      rerenderChipsHors();
+    });
+    chip.appendChild(btn);
+    zone.appendChild(chip);
+  });
+}
+
+function ajouterBlocPartenaire() {
+  blocCount++;
+  const id = blocCount;
+  const div = document.createElement('div');
+  div.className = 'partenaire-block';
+  div.dataset.blocId = id;
+  div.innerHTML = `
+    <div class="titre">Partenaire</div>
+    <div class="partenaire-fields">
+      <div><label>Fonction</label><input type="text" class="f-fonction"></div>
+      <div><label>Nom</label><input type="text" class="f-nom"></div>
+      <div><label>Prénom</label><input type="text" class="f-prenom"></div>
+      <div><label>E-mail</label><input type="email" class="f-email"></div>
+      <div><label>Téléphone</label><input type="text" class="f-tel"></div>
+      <button class="btn-remove" type="button" onclick="this.closest('.partenaire-block').remove(); majCompteur();">Retirer</button>
+    </div>
+  `;
+  document.getElementById('partenaires').appendChild(div);
+  majCompteur();
+}
+
+function majCompteur() {
+  const n = document.querySelectorAll('.partenaire-block').length;
+  document.getElementById('compteur').textContent = `${n} partenaire(s) dans la liste`;
+}
+
+document.getElementById('btnAdd').addEventListener('click', ajouterBlocPartenaire);
+
+function afficherMessage(texte, ok) {
+  const el = document.getElementById('message');
+  el.textContent = texte;
+  el.className = ok ? 'ok' : 'err';
+}
+
+function viderFormulaire() {
+  document.getElementById('nomOdrt').value = '';
+  document.getElementById('dateOdrt').value = '';
+  document.getElementById('horaire').value = '';
+  document.getElementById('lieu').value = '';
+  document.getElementById('circonscription').value = '';
+  document.getElementById('ecoles').value = '';
+  document.getElementById('partenaires').innerHTML = '';
+  blocCount = 0;
+  ajouterBlocPartenaire();
+  ecolesCircoChoisies.splice(0, ecolesCircoChoisies.length);
+  ecolesHorsChoisies.splice(0, ecolesHorsChoisies.length);
+  rerenderChipsCirco();
+  rerenderChipsHors();
+}
+
+async function chargerCirconscriptions() {
+  const table = await grist.docApi.fetchTable('Circonscriptions');
+  const select = document.getElementById('circonscription');
+  select.innerHTML = '<option value="">— Choisir —</option>';
+  circonscriptionsById = {};
+  for (let i = 0; i < table.id.length; i++) {
+    const rowId = table.id[i];
+    const nom = table.Nom_circonscription[i];
+    circonscriptionsById[rowId] = { nom, uaiCirco: table.uai_circo[i] };
+    const opt = document.createElement('option');
+    opt.value = rowId;
+    opt.textContent = nom;
+    select.appendChild(opt);
+  }
+}
+
+function formatDateFr(isoDate) {
+  // input type=date renvoie "aaaa-mm-jj" -> on convertit en timestamp Grist (secondes, UTC minuit)
+  if (!isoDate) return null;
+  const d = new Date(isoDate + 'T00:00:00Z');
+  return Math.floor(d.getTime() / 1000);
+}
+
+async function enregistrer() {
+  const btn = document.getElementById('btnSubmit');
+  const nomOdrt = document.getElementById('nomOdrt').value.trim();
+  const dateOdrt = document.getElementById('dateOdrt').value;
+  const horaire = document.getElementById('horaire').value.trim();
+  const lieu = document.getElementById('lieu').value.trim();
+  const circId = document.getElementById('circonscription').value;
+  const ecoles = document.getElementById('ecoles').value.trim();
+
+  if (!nomOdrt || !dateOdrt || !circId) {
+    afficherMessage('Merci de renseigner au minimum le nom de l\\'ODRT, la date et la circonscription.', false);
+    return;
+  }
+
+  const blocs = document.querySelectorAll('.partenaire-block');
+  const partenaires = [];
+  blocs.forEach(b => {
+    const nom = b.querySelector('.f-nom').value.trim();
+    const prenom = b.querySelector('.f-prenom').value.trim();
+    const fonction = b.querySelector('.f-fonction').value.trim();
+    const email = b.querySelector('.f-email').value.trim();
+    const tel = b.querySelector('.f-tel').value.trim();
+    if (nom || prenom || email) {
+      partenaires.push({ fonction, nom, prenom, email, tel });
+    }
+  });
+
+  if (partenaires.length === 0) {
+    afficherMessage('Ajoutez au moins un partenaire (avec au minimum un nom).', false);
+    return;
+  }
+
+  btn.disabled = true;
+  afficherMessage('Enregistrement en cours...', true);
+
+  try {
+    // 1. Créer la ligne de réunion
+    const resultReunion = await grist.docApi.applyUserActions([
+      ['AddRecord', 'Reunions_ODRT', null, {
+        Nom_ODRT: nomOdrt,
+        Date_ODRT: formatDateFr(dateOdrt),
+        Horaire: horaire,
+        Lieu: lieu,
+        Circonscription: parseInt(circId, 10),
+        Ecoles_concernees: ecoles,
+      }],
+    ]);
+    const reunionRowId = resultReunion.retValues[0];
+
+    // 2. Ajouter tous les partenaires en une seule action groupée
+    const colValues = {
+      Reunion: partenaires.map(() => reunionRowId),
+      Fonction: partenaires.map(p => p.fonction),
+      Nom: partenaires.map(p => p.nom),
+      Prenom: partenaires.map(p => p.prenom),
+      Email: partenaires.map(p => p.email),
+      Tel: partenaires.map(p => p.tel),
+    };
+    await grist.docApi.applyUserActions([
+      ['BulkAddRecord', 'Partenaires_invites', partenaires.map(() => null), colValues],
+    ]);
+
+    // 3. Ajouter les écoles (circo + hors circo) dans Ecoles_invitees
+    const toutesEcoles = [
+      ...ecolesCircoChoisies.map(e => ({ rowId: e.rowId, hors: false })),
+      ...ecolesHorsChoisies.map(e => ({ rowId: e.rowId, hors: true })),
+    ];
+    if (toutesEcoles.length > 0) {
+      await grist.docApi.applyUserActions([
+        ['BulkAddRecord', 'Ecoles_invitees', toutesEcoles.map(() => null), {
+          Reunion: toutesEcoles.map(() => reunionRowId),
+          Ecole: toutesEcoles.map(e => e.rowId),
+          Hors_circonscription: toutesEcoles.map(e => e.hors),
+        }],
+      ]);
+    }
+
+    afficherMessage(`Réunion "${nomOdrt}" enregistrée avec ${partenaires.length} partenaire(s) et ${toutesEcoles.length} école(s).`, true);
+    viderFormulaire();
+  } catch (e) {
+    console.error(e);
+    afficherMessage('Erreur lors de l\\'enregistrement : ' + (e.message || e), false);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('btnSubmit').addEventListener('click', enregistrer);
+
+grist.ready({ requiredAccess: 'full' });
+grist.onOptions(() => {}); // pas d'options particulières
+chargerCirconscriptions();
+chargerEcoles();
+ajouterBlocPartenaire();
+afficherSuggestions('rechercheEcoleCirco', 'suggestionsCirco', false, ecolesCircoChoisies, rerenderChipsCirco);
+afficherSuggestions('rechercheEcoleHors', 'suggestionsHors', true, ecolesHorsChoisies, rerenderChipsHors);
+</script>
+
+</body>
+</html>
