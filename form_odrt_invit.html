@@ -81,7 +81,9 @@
     display: none;
   }
   #message.ok { background: #e3f7e9; color: #1a8a3d; display: block; }
-  #message.err { background: #fbe6e6; color: #b3261e; display: block; }
+  #message.err { background: #fbe6e6; color: #b3261e; display: block; white-space: pre-line; }
+  .obligatoire::after { content: " *"; color: #b3261e; }
+  .row3 { display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 12px; }
   .compteur { font-size: 12px; color: #666; margin-top: 4px; }
 
   .recherche-ecole { position: relative; margin-bottom: 6px; }
@@ -130,31 +132,42 @@
 <body>
 
 <h2>Saisie d'une réunion ODRT et de ses partenaires à inviter</h2>
+<p style="font-size:12px;color:#666;">Les champs marqués d'un * sont obligatoires.</p>
 
-<label>Nom de l'ODRT</label>
-<input id="nomOdrt" type="text" placeholder="ex. ODRT THYM - session 1">
+<label class="obligatoire">Nom de l'ODRT</label>
+<input id="nomOdrt" type="text" placeholder="ex. ODRT Blois Nord - session 1">
 
 <div class="row2">
   <div>
-    <label>Date (jj-mm-aaaa)</label>
+    <label class="obligatoire">Date (jj-mm-aaaa)</label>
     <input id="dateOdrt" type="date">
   </div>
   <div>
-    <label>Horaire (ex. 14h-16h30)</label>
-    <input id="horaire" type="text" placeholder="14h-16h30">
+    <label class="obligatoire">Horaire</label>
+    <div class="row2">
+      <input id="horaireDebut" type="time" aria-label="Heure de début">
+      <input id="horaireFin" type="time" aria-label="Heure de fin">
+    </div>
   </div>
 </div>
 
-<div class="row2">
+<div class="row3">
   <div>
-    <label>Lieu</label>
-    <input id="lieu" type="text">
+    <label class="obligatoire">Rue</label>
+    <input id="adresseRue" type="text" placeholder="12 rue de l'École">
   </div>
   <div>
-    <label>Circonscription</label>
-    <select id="circonscription"><option value="">Chargement...</option></select>
+    <label class="obligatoire">Code postal</label>
+    <input id="adresseCp" type="text" placeholder="28000" inputmode="numeric" maxlength="5">
+  </div>
+  <div>
+    <label class="obligatoire">Ville</label>
+    <input id="adresseVille" type="text" placeholder="Chartres">
   </div>
 </div>
+
+<label class="obligatoire">Circonscription</label>
+<select id="circonscription"><option value="">Chargement...</option></select>
 
 <h3>Écoles à inviter (circonscription sélectionnée ci-dessus)</h3>
 <div class="recherche-ecole">
@@ -333,8 +346,11 @@ function afficherMessage(texte, ok) {
 function viderFormulaire() {
   document.getElementById('nomOdrt').value = '';
   document.getElementById('dateOdrt').value = '';
-  document.getElementById('horaire').value = '';
-  document.getElementById('lieu').value = '';
+  document.getElementById('horaireDebut').value = '';
+  document.getElementById('horaireFin').value = '';
+  document.getElementById('adresseRue').value = '';
+  document.getElementById('adresseCp').value = '';
+  document.getElementById('adresseVille').value = '';
   document.getElementById('circonscription').value = '';
   document.getElementById('partenaires').innerHTML = '';
   blocCount = 0;
@@ -353,12 +369,30 @@ async function chargerCirconscriptions() {
   for (let i = 0; i < table.id.length; i++) {
     const rowId = table.id[i];
     const nom = table.Nom_circonscription[i];
+    if (normaliser(nom).includes('dsden')) continue; // on exclut la DSDEN de la liste
     circonscriptionsById[rowId] = { nom, uaiCirco: table.uai_circo[i] };
     const opt = document.createElement('option');
     opt.value = rowId;
     opt.textContent = nom;
     select.appendChild(opt);
   }
+}
+
+function emailValide(email) {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
+}
+
+function telChiffres(tel) {
+  return (tel || '').replace(/\D/g, '');
+}
+
+function telValide(tel) {
+  return telChiffres(tel).length === 10;
+}
+
+function telFormate(tel) {
+  const d = telChiffres(tel);
+  return d.match(/.{1,2}/g).join(' ');
 }
 
 function formatDateFr(isoDate) {
@@ -372,32 +406,73 @@ async function enregistrer() {
   const btn = document.getElementById('btnSubmit');
   const nomOdrt = document.getElementById('nomOdrt').value.trim();
   const dateOdrt = document.getElementById('dateOdrt').value;
-  const horaire = document.getElementById('horaire').value.trim();
-  const lieu = document.getElementById('lieu').value.trim();
+  const horaireDebut = document.getElementById('horaireDebut').value;
+  const horaireFin = document.getElementById('horaireFin').value;
+  const rue = document.getElementById('adresseRue').value.trim();
+  const cp = document.getElementById('adresseCp').value.trim();
+  const ville = document.getElementById('adresseVille').value.trim();
   const circId = document.getElementById('circonscription').value;
 
-  if (!nomOdrt || !dateOdrt || !circId) {
-    afficherMessage("Merci de renseigner au minimum le nom de l'ODRT, la date et la circonscription.", false);
-    return;
+  const erreurs = [];
+
+  if (!nomOdrt) erreurs.push("Le nom de l'ODRT est obligatoire.");
+  if (!dateOdrt) erreurs.push("La date est obligatoire.");
+  if (!horaireDebut || !horaireFin) {
+    erreurs.push("L'heure de début ET l'heure de fin sont obligatoires.");
+  } else if (horaireFin <= horaireDebut) {
+    erreurs.push("L'heure de fin doit être postérieure à l'heure de début.");
+  }
+  if (!rue) erreurs.push("La rue est obligatoire.");
+  if (!cp || !/^\d{5}$/.test(cp)) erreurs.push("Le code postal doit contenir 5 chiffres.");
+  if (!ville) erreurs.push("La ville est obligatoire.");
+  if (!circId) erreurs.push("La circonscription est obligatoire.");
+  if (ecolesCircoChoisies.length === 0) {
+    erreurs.push("Au moins une école à inviter (circonscription) est obligatoire.");
   }
 
   const blocs = document.querySelectorAll('.partenaire-block');
   const partenaires = [];
-  blocs.forEach(b => {
+  blocs.forEach((b, i) => {
+    const fonction = b.querySelector('.f-fonction').value.trim();
     const nom = b.querySelector('.f-nom').value.trim();
     const prenom = b.querySelector('.f-prenom').value.trim();
-    const fonction = b.querySelector('.f-fonction').value.trim();
     const email = b.querySelector('.f-email').value.trim();
     const tel = b.querySelector('.f-tel').value.trim();
-    if (nom || prenom || email) {
-      partenaires.push({ fonction, nom, prenom, email, tel });
+    const rempli = fonction || nom || prenom || email || tel;
+    if (!rempli) return; // bloc totalement vide, on l'ignore silencieusement
+
+    const num = i + 1;
+    if (!fonction) erreurs.push(`Partenaire ${num} : la fonction est obligatoire.`);
+    if (!nom) erreurs.push(`Partenaire ${num} : le nom est obligatoire.`);
+    if (!prenom) erreurs.push(`Partenaire ${num} : le prénom est obligatoire.`);
+    if (!email) {
+      erreurs.push(`Partenaire ${num} : l'e-mail est obligatoire.`);
+    } else if (!emailValide(email)) {
+      erreurs.push(`Partenaire ${num} : l'e-mail n'est pas dans un format valide.`);
     }
+    if (!tel) {
+      erreurs.push(`Partenaire ${num} : le téléphone est obligatoire.`);
+    } else if (!telValide(tel)) {
+      erreurs.push(`Partenaire ${num} : le téléphone doit contenir 10 chiffres.`);
+    }
+
+    partenaires.push({
+      fonction, nom, prenom, email,
+      tel: telValide(tel) ? telFormate(tel) : tel,
+    });
   });
 
   if (partenaires.length === 0) {
-    afficherMessage('Ajoutez au moins un partenaire (avec au minimum un nom).', false);
+    erreurs.push('Ajoutez au moins un partenaire.');
+  }
+
+  if (erreurs.length > 0) {
+    afficherMessage('Merci de corriger les points suivants avant d’enregistrer :\n• ' + erreurs.join('\n• '), false);
     return;
   }
+
+  const horaire = `${horaireDebut.replace(':', 'h')}-${horaireFin.replace(':', 'h')}`;
+  const lieu = `${rue}, ${cp} ${ville}`;
 
   btn.disabled = true;
   afficherMessage('Enregistrement en cours...', true);
@@ -443,7 +518,8 @@ async function enregistrer() {
       ]);
     }
 
-    afficherMessage(`Réunion "${nomOdrt}" enregistrée avec ${partenaires.length} partenaire(s) et ${toutesEcoles.length} école(s).`, true);
+    afficherMessage(`✅ Enregistrement effectué avec succès : réunion "${nomOdrt}" avec ${partenaires.length} partenaire(s) et ${toutesEcoles.length} école(s).`, true);
+    document.getElementById('message').scrollIntoView({ behavior: 'smooth', block: 'center' });
     viderFormulaire();
   } catch (e) {
     console.error(e);
