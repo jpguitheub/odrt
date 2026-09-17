@@ -74,7 +74,8 @@
   }
   .btn-submit:disabled { background: #9ccaa9; cursor: not-allowed; }
   #message {
-    margin-top: 14px;
+    margin-top: 20px;
+    margin-bottom: 14px;
     padding: 10px 12px;
     border-radius: 4px;
     font-size: 14px;
@@ -135,7 +136,7 @@
 <p style="font-size:12px;color:#666;">Les champs marqués d'un * sont obligatoires.</p>
 
 <label class="obligatoire">Nom de l'ODRT</label>
-<input id="nomOdrt" type="text" placeholder="ex. ODRT Blois Nord - session 1">
+<input id="nomOdrt" type="text" placeholder="ex. ODRT Châteauneuf en Thymerais - session 1">
 
 <div class="row2">
   <div>
@@ -188,8 +189,8 @@
 <button class="btn-add" id="btnAdd" type="button">+ Ajouter un partenaire</button>
 <div class="compteur" id="compteur"></div>
 
-<button class="btn-submit" id="btnSubmit" type="button">Enregistrer cette réunion et ses partenaires</button>
 <div id="message"></div>
+<button class="btn-submit" id="btnSubmit" type="button">Enregistrer cette réunion et ses partenaires</button>
 
 <script>
 let circonscriptionsById = {};
@@ -442,7 +443,6 @@ async function enregistrer() {
     if (!rempli) return; // bloc totalement vide, on l'ignore silencieusement
 
     const num = i + 1;
-    if (!fonction) erreurs.push(`Partenaire ${num} : la fonction est obligatoire.`);
     if (!nom) erreurs.push(`Partenaire ${num} : le nom est obligatoire.`);
     if (!prenom) erreurs.push(`Partenaire ${num} : le prénom est obligatoire.`);
     if (!email) {
@@ -450,10 +450,8 @@ async function enregistrer() {
     } else if (!emailValide(email)) {
       erreurs.push(`Partenaire ${num} : l'e-mail n'est pas dans un format valide.`);
     }
-    if (!tel) {
-      erreurs.push(`Partenaire ${num} : le téléphone est obligatoire.`);
-    } else if (!telValide(tel)) {
-      erreurs.push(`Partenaire ${num} : le téléphone doit contenir 10 chiffres.`);
+    if (tel && !telValide(tel)) {
+      erreurs.push(`Partenaire ${num} : le téléphone doit contenir 10 chiffres (ou laissez-le vide).`);
     }
 
     partenaires.push({
@@ -468,6 +466,7 @@ async function enregistrer() {
 
   if (erreurs.length > 0) {
     afficherMessage('Merci de corriger les points suivants avant d’enregistrer :\n• ' + erreurs.join('\n• '), false);
+    document.getElementById('message').scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
 
