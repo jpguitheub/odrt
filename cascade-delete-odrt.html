@@ -1,1 +1,139 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Suppression cascade ODRT</title>
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+<style>
+  :root {
+    color-scheme: light dark;
+  }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    padding: 16px;
+    background: #ffffff;
+    color: #1a1a1a;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #1e1e1e; color: #eaeaea; }
+  }
+  h3 {
+    margin: 0 0 8px 0;
+    font-size: 15px;
+  }
+  #details {
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 16px;
+    min-height: 18px;
+  }
+  button {
+    background: #d9363e;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    width: 100%;
+  }
+  button:disabled {
+    background: #c9c9c9;
+    cursor: not-allowed;
+  }
+  button:not(:disabled):hover {
+    background: #b8262d;
+  }
+  #status {
+    margin-top: 12px;
+    font-size: 13px;
+    color: #444;
+    min-height: 18px;
+  }
+</style>
+</head>
+<body>
+  <div id="app">
+    <h3 id="title">Aucune réunion sélectionnée</h3>
+    <p id="details">Sélectionnez une réunion dans la table Reunions_ODRT.</p>
+    <button id="deleteBtn" disabled>Supprimer la réunion et tout ce qui y est lié</button>
+    <p id="status"></p>
+  </div>
 
+<script>
+let currentRecord = null;
+
+grist.ready({ requiredAccess: 'full' });
+
+grist.onRecord(function (record) {
+  currentRecord = record;
+  const titleEl = document.getElementById('title');
+  const detailsEl = document.getElementById('details');
+  const btn = document.getElementById('deleteBtn');
+  const statusEl = document.getElementById('status');
+
+  if (record) {
+    titleEl.innerText = 'Réunion : ' + (record.Nom_ODRT || '(sans nom)');
+    detailsEl.innerText = 'Cliquez pour supprimer cette réunion ainsi que les écoles et partenaires qui y sont invités.';
+    btn.disabled = false;
+  } else {
+    titleEl.innerText = 'Aucune réunion sélectionnée';
+    detailsEl.innerText = 'Sélectionnez une réunion dans la table Reunions_ODRT.';
+    btn.disabled = true;
+  }
+  statusEl.innerText = '';
+});
+
+document.getElementById('deleteBtn').addEventListener('click', async function () {
+  if (!currentRecord) return;
+  const reunionId = currentRecord.id;
+  const reunionNom = currentRecord.Nom_ODRT || '(sans nom)';
+  const statusEl = document.getElementById('status');
+  const btn = document.getElementById('deleteBtn');
+
+  statusEl.innerText = 'Analyse des données liées...';
+  btn.disabled = true;
+
+  try {
+    const ecoles = await grist.docApi.fetchTable('Ecoles_invitees');
+    const partenaires = await grist.docApi.fetchTable('Partenaires_invites');
+
+    const ecolesIds = ecoles.id.filter((_, i) => ecoles.Reunion[i] === reunionId);
+    const partenairesIds = partenaires.id.filter((_, i) => partenaires.Reunion[i] === reunionId);
+
+    const confirmMsg =
+      'Supprimer la réunion « ' + reunionNom + ' » ?\n\n' +
+      '- ' + ecolesIds.length + ' école(s) invitée(s)\n' +
+      '- ' + partenairesIds.length + ' partenaire(s) invité(s)\n\n' +
+      'Cette action est irréversible.';
+
+    if (!window.confirm(confirmMsg)) {
+      statusEl.innerText = 'Annulé.';
+      btn.disabled = false;
+      return;
+    }
+
+    statusEl.innerText = 'Suppression en cours...';
+
+    const actions = [];
+    if (ecolesIds.length) actions.push(['BulkRemoveRecord', 'Ecoles_invitees', ecolesIds]);
+    if (partenairesIds.length) actions.push(['BulkRemoveRecord', 'Partenaires_invites', partenairesIds]);
+    actions.push(['RemoveRecord', 'Reunions_ODRT', reunionId]);
+
+    await grist.docApi.applyUserActions(actions);
+
+    statusEl.innerText =
+      'Supprimé : la réunion et ' + (ecolesIds.length + partenairesIds.length) + ' ligne(s) liée(s).';
+    document.getElementById('title').innerText = 'Aucune réunion sélectionnée';
+    document.getElementById('details').innerText = 'Sélectionnez une réunion dans la table Reunions_ODRT.';
+    currentRecord = null;
+  } catch (err) {
+    statusEl.innerText = 'Erreur : ' + err.message;
+    btn.disabled = false;
+    console.error(err);
+  }
+});
+</script>
+</body>
+</html>
