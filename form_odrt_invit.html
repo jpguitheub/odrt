@@ -170,14 +170,14 @@
 <label class="obligatoire">Circonscription</label>
 <select id="circonscription"><option value="">Chargement...</option></select>
 
-<h3>Écoles à inviter (circonscription sélectionnée ci-dessus)</h3>
+<h3>Écoles concernées (circonscription sélectionnée ci-dessus)</h3>
 <div class="recherche-ecole">
   <input type="text" id="rechercheEcoleCirco" placeholder="Tapez le nom ou l'UAI de l'école...">
   <div class="suggestions" id="suggestionsCirco" style="display:none;"></div>
 </div>
 <div class="chips" id="chipsCirco"></div>
 
-<h3>École(s) hors circonscription à inviter</h3>
+<h3>École(s) hors circonscription concernées</h3>
 <div class="recherche-ecole">
   <input type="text" id="rechercheEcoleHors" placeholder="Tapez le nom ou l'UAI de l'école...">
   <div class="suggestions" id="suggestionsHors" style="display:none;"></div>
@@ -428,7 +428,7 @@ async function enregistrer() {
   if (!ville) erreurs.push("La ville est obligatoire.");
   if (!circId) erreurs.push("La circonscription est obligatoire.");
   if (ecolesCircoChoisies.length === 0) {
-    erreurs.push("Au moins une école à inviter (circonscription) est obligatoire.");
+    erreurs.push("Au moins une école de la circonscription est obligatoire.");
   }
 
   const blocs = document.querySelectorAll('.partenaire-block');
