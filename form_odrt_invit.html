@@ -23,6 +23,7 @@
     border-radius: 4px;
     font-size: 14px;
   }
+  select:disabled { background: #eef2fb; color: #1a1a1a; }
   textarea { resize: vertical; min-height: 50px; }
   .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .partenaire-block {
@@ -193,7 +194,12 @@
 <button class="btn-submit" id="btnSubmit" type="button">Enregistrer cette réunion et ses partenaires</button>
 
 <script>
+// Lignes de Circonscriptions qui servent uniquement aux droits d'accès (IEN DSDEN / ADASEN)
+// et ne doivent jamais être proposées comme circonscription d'une réunion.
+const CIRCOS_EXCLUES = ['dsden', 'adasen'];
+
 let circonscriptionsById = {};
+let circoUnique = null;         // rowId si l'utilisateur ne voit qu'une circonscription (IEN de circonscription)
 let toutesLesEcoles = [];
 let ecolesCircoChoisies = [];   // {rowId, libelle_ecole, uai_ecole}
 let ecolesHorsChoisies = [];
@@ -352,7 +358,8 @@ function viderFormulaire() {
   document.getElementById('adresseRue').value = '';
   document.getElementById('adresseCp').value = '';
   document.getElementById('adresseVille').value = '';
-  document.getElementById('circonscription').value = '';
+  // Un IEN de circonscription garde sa circonscription présélectionnée
+  document.getElementById('circonscription').value = circoUnique ? String(circoUnique) : '';
   document.getElementById('partenaires').innerHTML = '';
   blocCount = 0;
   ajouterBlocPartenaire();
@@ -363,6 +370,9 @@ function viderFormulaire() {
 }
 
 async function chargerCirconscriptions() {
+  // Les permissions font que :
+  //  - un IEN de circonscription ne reçoit que SA ligne ;
+  //  - un IEN DSDEN / ADASEN reçoit toutes les lignes.
   const table = await grist.docApi.fetchTable('Circonscriptions');
   const select = document.getElementById('circonscription');
   select.innerHTML = '<option value="">— Choisir —</option>';
@@ -370,12 +380,27 @@ async function chargerCirconscriptions() {
   for (let i = 0; i < table.id.length; i++) {
     const rowId = table.id[i];
     const nom = table.Nom_circonscription[i];
-    if (normaliser(nom).includes('dsden')) continue; // on exclut la DSDEN de la liste
+    if (CIRCOS_EXCLUES.includes(normaliser(nom).trim())) continue;
     circonscriptionsById[rowId] = { nom, uaiCirco: table.uai_circo[i] };
     const opt = document.createElement('option');
     opt.value = rowId;
     opt.textContent = nom;
     select.appendChild(opt);
+  }
+
+  const ids = Object.keys(circonscriptionsById);
+  if (ids.length === 0) {
+    // Adresse e-mail absente de Circonscriptions.Email_IEN : aucun droit de saisie.
+    select.innerHTML = '<option value="">Aucune circonscription accessible</option>';
+    select.disabled = true;
+    document.getElementById('btnSubmit').disabled = true;
+    afficherMessage("Votre adresse e-mail n'est rattachée à aucune circonscription. " +
+      "Contactez la DSDEN pour obtenir l'accès à la saisie.", false);
+  } else if (ids.length === 1) {
+    // IEN de circonscription : sa circonscription est imposée.
+    circoUnique = parseInt(ids[0], 10);
+    select.value = ids[0];
+    select.disabled = true;
   }
 }
 
@@ -401,6 +426,14 @@ function formatDateFr(isoDate) {
   if (!isoDate) return null;
   const d = new Date(isoDate + 'T00:00:00Z');
   return Math.floor(d.getTime() / 1000);
+}
+
+function messageErreurGrist(e) {
+  const txt = (e && e.message) ? e.message : String(e);
+  if (/blocked by|access rules|permission|acl/i.test(txt)) {
+    return "Enregistrement refusé : vous ne pouvez saisir une réunion que pour votre propre circonscription.\n(" + txt + ")";
+  }
+  return "Erreur lors de l'enregistrement : " + txt;
 }
 
 async function enregistrer() {
@@ -478,6 +511,7 @@ async function enregistrer() {
 
   try {
     // 1. Créer la ligne de réunion
+    //    (permission : Circonscription doit être celle de l'utilisateur, sauf DSDEN/ADASEN)
     const resultReunion = await grist.docApi.applyUserActions([
       ['AddRecord', 'Reunions_ODRT', null, {
         Nom_ODRT: nomOdrt,
@@ -489,7 +523,24 @@ async function enregistrer() {
     ]);
     const reunionRowId = resultReunion.retValues[0];
 
-    // 2. Ajouter tous les partenaires en une seule action groupée
+    // 2. Ajouter les écoles (circo + hors circo) dans Ecoles_invitees.
+    //    La colonne de référence vers Ecoles s'appelle Nom_ecole
+    //    ("Ecole" est une colonne formule, on ne peut pas y écrire).
+    const toutesEcoles = [
+      ...ecolesCircoChoisies.map(e => ({ rowId: e.rowId, hors: false })),
+      ...ecolesHorsChoisies.map(e => ({ rowId: e.rowId, hors: true })),
+    ];
+    if (toutesEcoles.length > 0) {
+      await grist.docApi.applyUserActions([
+        ['BulkAddRecord', 'Ecoles_invitees', toutesEcoles.map(() => null), {
+          Reunion: toutesEcoles.map(() => reunionRowId),
+          Nom_ecole: toutesEcoles.map(e => e.rowId),
+          Hors_circonscription: toutesEcoles.map(e => e.hors),
+        }],
+      ]);
+    }
+
+    // 3. Ajouter tous les partenaires en une seule action groupée
     const colValues = {
       Reunion: partenaires.map(() => reunionRowId),
       Fonction: partenaires.map(p => p.fonction),
@@ -502,27 +553,15 @@ async function enregistrer() {
       ['BulkAddRecord', 'Partenaires_invites', partenaires.map(() => null), colValues],
     ]);
 
-    // 3. Ajouter les écoles (circo + hors circo) dans Ecoles_invitees
-    const toutesEcoles = [
-      ...ecolesCircoChoisies.map(e => ({ rowId: e.rowId, hors: false })),
-      ...ecolesHorsChoisies.map(e => ({ rowId: e.rowId, hors: true })),
-    ];
-    if (toutesEcoles.length > 0) {
-      await grist.docApi.applyUserActions([
-        ['BulkAddRecord', 'Ecoles_invitees', toutesEcoles.map(() => null), {
-          Reunion: toutesEcoles.map(() => reunionRowId),
-          Ecole: toutesEcoles.map(e => e.rowId),
-          Hors_circonscription: toutesEcoles.map(e => e.hors),
-        }],
-      ]);
-    }
-
+    // Aucune relecture des tables Reunions_ODRT / Ecoles_invitees / Partenaires_invites :
+    // un IEN de circonscription n'a que le droit de création sur ces tables.
     afficherMessage(`✅ Enregistrement effectué avec succès : réunion "${nomOdrt}" avec ${partenaires.length} partenaire(s) et ${toutesEcoles.length} école(s).`, true);
     document.getElementById('message').scrollIntoView({ behavior: 'smooth', block: 'center' });
     viderFormulaire();
   } catch (e) {
     console.error(e);
-    afficherMessage("Erreur lors de l'enregistrement : " + (e.message || e), false);
+    afficherMessage(messageErreurGrist(e), false);
+    document.getElementById('message').scrollIntoView({ behavior: 'smooth', block: 'center' });
   } finally {
     btn.disabled = false;
   }
@@ -532,8 +571,8 @@ document.getElementById('btnSubmit').addEventListener('click', enregistrer);
 
 grist.ready({ requiredAccess: 'full' });
 grist.onOptions(() => {}); // pas d'options particulières
-chargerCirconscriptions();
-chargerEcoles();
+chargerCirconscriptions().catch(e => afficherMessage("Impossible de charger les circonscriptions : " + (e.message || e), false));
+chargerEcoles().catch(e => afficherMessage("Impossible de charger les écoles : " + (e.message || e), false));
 ajouterBlocPartenaire();
 afficherSuggestions('rechercheEcoleCirco', 'suggestionsCirco', false, ecolesCircoChoisies, rerenderChipsCirco);
 afficherSuggestions('rechercheEcoleHors', 'suggestionsHors', true, ecolesHorsChoisies, rerenderChipsHors);
