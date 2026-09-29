@@ -74,6 +74,19 @@
     width: 100%;
   }
   .btn-submit:disabled { background: #9ccaa9; cursor: not-allowed; }
+  .btn-delete-reunion {
+    background: white;
+    color: #b3261e;
+    border: 1px solid #b3261e;
+    border-radius: 4px;
+    padding: 9px 14px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    margin-top: 10px;
+    width: 100%;
+  }
+  .btn-delete-reunion:hover { background: #fbe6e6; }
   #message {
     margin-top: 20px;
     margin-bottom: 14px;
@@ -87,6 +100,26 @@
   .obligatoire::after { content: " *"; color: #b3261e; }
   .row3 { display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 12px; }
   .compteur { font-size: 12px; color: #666; margin-top: 4px; }
+
+  .mode-bar {
+    background: #eef2fb;
+    border: 1px solid #c3d0ee;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 20px;
+  }
+  .mode-bar label { margin-top: 0; }
+  .badge-edition {
+    display: inline-block;
+    background: #2952a3;
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
 
   .recherche-ecole { position: relative; margin-bottom: 6px; }
   .suggestions {
@@ -133,8 +166,15 @@
 </head>
 <body>
 
-<h2>Saisie d'une réunion ODRT et de ses partenaires à inviter</h2>
+<h2 id="titrePage">Saisie d'une réunion ODRT et de ses partenaires à inviter</h2>
 <p style="font-size:12px;color:#666;">Les champs marqués d'un * sont obligatoires.</p>
+
+<div class="mode-bar">
+  <label>Que voulez-vous faire ?</label>
+  <select id="selectReunionExistante">
+    <option value="">— Créer une nouvelle réunion —</option>
+  </select>
+</div>
 
 <label class="obligatoire">Nom de l'ODRT</label>
 <input id="nomOdrt" type="text" placeholder="ex. ODRT Châteauneuf en Thymerais - session 1">
@@ -192,6 +232,7 @@
 
 <div id="message"></div>
 <button class="btn-submit" id="btnSubmit" type="button">Enregistrer cette réunion et ses partenaires</button>
+<button class="btn-delete-reunion" id="btnDeleteReunion" type="button" style="display:none;">Supprimer définitivement cette réunion</button>
 
 <script>
 // Lignes de Circonscriptions qui servent uniquement aux droits d'accès (IEN DSDEN / ADASEN)
@@ -201,13 +242,16 @@ const CIRCOS_EXCLUES = ['dsden', 'adasen'];
 let circonscriptionsById = {};
 let circoUnique = null;         // rowId si l'utilisateur ne voit qu'une circonscription (IEN de circonscription)
 let toutesLesEcoles = [];
-let ecolesCircoChoisies = [];   // {rowId, libelle_ecole, uai_ecole}
+let ecolesCircoChoisies = [];   // {rowId, libelle_ecole, uai_ecole, type_ecole, uai_circo, libelle_circo, invitationRowId}
 let ecolesHorsChoisies = [];
+let ecolesInviteesASupprimer = [];   // rowId dans Ecoles_invitees, à supprimer à l'enregistrement
+let partenairesASupprimer = [];      // rowId dans Partenaires_invites, à supprimer à l'enregistrement
 let blocCount = 0;
+let reunionEnEditionId = null;       // null = mode création ; sinon rowId de Reunions_ODRT en cours d'édition
 
 function normaliser(txt) {
   return (txt || '').toString().toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    .normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
 async function chargerEcoles() {
@@ -220,6 +264,10 @@ async function chargerEcoles() {
     uai_circo: table.uai_circo[i],
     libelle_circo: table.libelle_circo[i],
   }));
+}
+
+function trouverEcole(rowId) {
+  return toutesLesEcoles.find(e => e.rowId === rowId);
 }
 
 function uaiCircoSelectionne() {
@@ -263,7 +311,7 @@ function afficherSuggestions(inputId, suggestionsId, horsCirco, listeChoisie, re
       div.textContent = `${e.type_ecole} - ${e.libelle_ecole} (${e.uai_ecole}) — ${e.libelle_circo}`;
       div.addEventListener('click', () => {
         if (!listeChoisie.some(x => x.rowId === e.rowId)) {
-          listeChoisie.push(e);
+          listeChoisie.push({ ...e, invitationRowId: null });
           rerenderChips();
         }
         input.value = '';
@@ -278,6 +326,16 @@ function afficherSuggestions(inputId, suggestionsId, horsCirco, listeChoisie, re
   });
 }
 
+function retirerEcole(liste, rerenderChips, rowId) {
+  const idx = liste.findIndex(x => x.rowId === rowId);
+  if (idx === -1) return;
+  const [retiree] = liste.splice(idx, 1);
+  if (retiree.invitationRowId) {
+    ecolesInviteesASupprimer.push(retiree.invitationRowId);
+  }
+  rerenderChips();
+}
+
 function rerenderChipsCirco() {
   const zone = document.getElementById('chipsCirco');
   zone.innerHTML = '';
@@ -287,11 +345,7 @@ function rerenderChipsCirco() {
     chip.innerHTML = `<span>${e.type_ecole} - ${e.libelle_ecole} (${e.uai_ecole}) — ${e.libelle_circo}</span>`;
     const btn = document.createElement('button');
     btn.textContent = '✕';
-    btn.addEventListener('click', () => {
-      const idx = ecolesCircoChoisies.findIndex(x => x.rowId === e.rowId);
-      if (idx !== -1) ecolesCircoChoisies.splice(idx, 1);
-      rerenderChipsCirco();
-    });
+    btn.addEventListener('click', () => retirerEcole(ecolesCircoChoisies, rerenderChipsCirco, e.rowId));
     chip.appendChild(btn);
     zone.appendChild(chip);
   });
@@ -306,22 +360,17 @@ function rerenderChipsHors() {
     chip.innerHTML = `<span>${e.type_ecole} - ${e.libelle_ecole} (${e.uai_ecole}) — ${e.libelle_circo}</span>`;
     const btn = document.createElement('button');
     btn.textContent = '✕';
-    btn.addEventListener('click', () => {
-      const idx = ecolesHorsChoisies.findIndex(x => x.rowId === e.rowId);
-      if (idx !== -1) ecolesHorsChoisies.splice(idx, 1);
-      rerenderChipsHors();
-    });
+    btn.addEventListener('click', () => retirerEcole(ecolesHorsChoisies, rerenderChipsHors, e.rowId));
     chip.appendChild(btn);
     zone.appendChild(chip);
   });
 }
 
-function ajouterBlocPartenaire() {
+function ajouterBlocPartenaire(data) {
   blocCount++;
-  const id = blocCount;
   const div = document.createElement('div');
   div.className = 'partenaire-block';
-  div.dataset.blocId = id;
+  div.dataset.rowId = (data && data.rowId) ? String(data.rowId) : '';
   div.innerHTML = `
     <div class="titre">Partenaire</div>
     <div class="partenaire-fields">
@@ -330,9 +379,22 @@ function ajouterBlocPartenaire() {
       <div><label>Prénom</label><input type="text" class="f-prenom"></div>
       <div><label>E-mail</label><input type="email" class="f-email"></div>
       <div><label>Téléphone</label><input type="text" class="f-tel"></div>
-      <button class="btn-remove" type="button" onclick="this.closest('.partenaire-block').remove(); majCompteur();">Retirer</button>
+      <button class="btn-remove" type="button">Retirer</button>
     </div>
   `;
+  if (data) {
+    div.querySelector('.f-fonction').value = data.fonction || '';
+    div.querySelector('.f-nom').value = data.nom || '';
+    div.querySelector('.f-prenom').value = data.prenom || '';
+    div.querySelector('.f-email').value = data.email || '';
+    div.querySelector('.f-tel').value = data.tel || '';
+  }
+  div.querySelector('.btn-remove').addEventListener('click', () => {
+    const rid = div.dataset.rowId;
+    if (rid) partenairesASupprimer.push(parseInt(rid, 10));
+    div.remove();
+    majCompteur();
+  });
   document.getElementById('partenaires').appendChild(div);
   majCompteur();
 }
@@ -342,12 +404,21 @@ function majCompteur() {
   document.getElementById('compteur').textContent = `${n} partenaire(s) dans la liste`;
 }
 
-document.getElementById('btnAdd').addEventListener('click', ajouterBlocPartenaire);
+document.getElementById('btnAdd').addEventListener('click', () => ajouterBlocPartenaire());
 
 function afficherMessage(texte, ok) {
   const el = document.getElementById('message');
   el.textContent = texte;
   el.className = ok ? 'ok' : 'err';
+}
+
+function reinitialiserEtatEdition() {
+  reunionEnEditionId = null;
+  ecolesInviteesASupprimer = [];
+  partenairesASupprimer = [];
+  document.getElementById('titrePage').innerHTML = "Saisie d'une réunion ODRT et de ses partenaires à inviter";
+  document.getElementById('btnSubmit').textContent = "Enregistrer cette réunion et ses partenaires";
+  document.getElementById('btnDeleteReunion').style.display = 'none';
 }
 
 function viderFormulaire() {
@@ -404,6 +475,152 @@ async function chargerCirconscriptions() {
   }
 }
 
+function isoDepuisTimestampGrist(ts) {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  return d.toISOString().slice(0, 10);
+}
+
+function dateFrDepuisTimestampGrist(ts) {
+  const iso = isoDepuisTimestampGrist(ts);
+  if (!iso) return '';
+  const [a, m, j] = iso.split('-');
+  return `${j}-${m}-${a}`;
+}
+
+function parseHoraire(horaire) {
+  // Formats attendus : "14h00-16h30", parfois anciens formats "14h-16h"
+  const m = /^(\d{1,2})h(\d{2})?\s*-\s*(\d{1,2})h(\d{2})?$/i.exec((horaire || '').trim());
+  if (!m) return { debut: '', fin: '' };
+  const pad = (v) => String(v).padStart(2, '0');
+  const debut = `${pad(m[1])}:${m[2] ? pad(m[2]) : '00'}`;
+  const fin = `${pad(m[3])}:${m[4] ? pad(m[4]) : '00'}`;
+  return { debut, fin };
+}
+
+function parseLieu(lieu) {
+  // Format attendu : "12 rue de l'École, 28000 Chartres"
+  const parts = (lieu || '').split(',');
+  const rue = (parts[0] || '').trim();
+  const reste = (parts.slice(1).join(',') || '').trim();
+  const m = /^(\d{5})\s+(.*)$/.exec(reste);
+  if (m) return { rue, cp: m[1], ville: m[2].trim() };
+  return { rue, cp: '', ville: reste };
+}
+
+async function chargerListeReunions() {
+  const select = document.getElementById('selectReunionExistante');
+  select.innerHTML = '<option value="">— Créer une nouvelle réunion —</option>';
+  try {
+    const table = await grist.docApi.fetchTable('Reunions_ODRT');
+    const lignes = table.id.map((rowId, i) => ({
+      rowId,
+      nom: table.Nom_ODRT[i],
+      date: table.Date_ODRT[i],
+    }));
+    lignes.sort((a, b) => (b.date || 0) - (a.date || 0));
+    lignes.forEach(l => {
+      const opt = document.createElement('option');
+      opt.value = l.rowId;
+      const dateAffichee = l.date ? dateFrDepuisTimestampGrist(l.date) : 'date inconnue';
+      opt.textContent = `${l.nom} — ${dateAffichee}`;
+      select.appendChild(opt);
+    });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function chargerReunionPourEdition(rowId) {
+  afficherMessage('Chargement de la réunion...', true);
+  try {
+    const [tblReunions, tblEcoles, tblPartenaires] = await Promise.all([
+      grist.docApi.fetchTable('Reunions_ODRT'),
+      grist.docApi.fetchTable('Ecoles_invitees'),
+      grist.docApi.fetchTable('Partenaires_invites'),
+    ]);
+
+    const idx = tblReunions.id.indexOf(rowId);
+    if (idx === -1) {
+      afficherMessage("Cette réunion n'est plus accessible.", false);
+      return;
+    }
+
+    reinitialiserEtatEdition();
+    reunionEnEditionId = rowId;
+
+    document.getElementById('nomOdrt').value = tblReunions.Nom_ODRT[idx] || '';
+    document.getElementById('dateOdrt').value = isoDepuisTimestampGrist(tblReunions.Date_ODRT[idx]);
+    const { debut, fin } = parseHoraire(tblReunions.Horaire[idx]);
+    document.getElementById('horaireDebut').value = debut;
+    document.getElementById('horaireFin').value = fin;
+    const { rue, cp, ville } = parseLieu(tblReunions.Lieu[idx]);
+    document.getElementById('adresseRue').value = rue;
+    document.getElementById('adresseCp').value = cp;
+    document.getElementById('adresseVille').value = ville;
+    const circId = tblReunions.Circonscription[idx];
+    if (circId) document.getElementById('circonscription').value = String(circId);
+
+    // Écoles liées à cette réunion
+    ecolesCircoChoisies.splice(0, ecolesCircoChoisies.length);
+    ecolesHorsChoisies.splice(0, ecolesHorsChoisies.length);
+    for (let i = 0; i < tblEcoles.id.length; i++) {
+      if (tblEcoles.Reunion[i] !== rowId) continue;
+      const ecoleRowId = tblEcoles.Nom_ecole[i];
+      const infoEcole = trouverEcole(ecoleRowId);
+      if (!infoEcole) continue;
+      const entree = { ...infoEcole, invitationRowId: tblEcoles.id[i] };
+      if (tblEcoles.Hors_circonscription[i]) {
+        ecolesHorsChoisies.push(entree);
+      } else {
+        ecolesCircoChoisies.push(entree);
+      }
+    }
+    rerenderChipsCirco();
+    rerenderChipsHors();
+
+    // Partenaires liés à cette réunion
+    document.getElementById('partenaires').innerHTML = '';
+    blocCount = 0;
+    let nbPartenaires = 0;
+    for (let i = 0; i < tblPartenaires.id.length; i++) {
+      if (tblPartenaires.Reunion[i] !== rowId) continue;
+      ajouterBlocPartenaire({
+        rowId: tblPartenaires.id[i],
+        fonction: tblPartenaires.Fonction[i],
+        nom: tblPartenaires.Nom[i],
+        prenom: tblPartenaires.Prenom[i],
+        email: tblPartenaires.Email[i],
+        tel: tblPartenaires.Tel[i],
+      });
+      nbPartenaires++;
+    }
+    if (nbPartenaires === 0) ajouterBlocPartenaire();
+
+    document.getElementById('titrePage').innerHTML =
+      "Modifier une réunion ODRT" + '<span class="badge-edition">édition</span>';
+    document.getElementById('btnSubmit').textContent = "Enregistrer les modifications";
+    document.getElementById('btnDeleteReunion').style.display = 'block';
+
+    afficherMessage('', false);
+    document.getElementById('message').className = '';
+    document.getElementById('message').style.display = 'none';
+  } catch (e) {
+    console.error(e);
+    afficherMessage("Impossible de charger cette réunion : " + (e.message || e), false);
+  }
+}
+
+document.getElementById('selectReunionExistante').addEventListener('change', (evt) => {
+  const val = evt.target.value;
+  if (!val) {
+    reinitialiserEtatEdition();
+    viderFormulaire();
+  } else {
+    chargerReunionPourEdition(parseInt(val, 10));
+  }
+});
+
 function emailValide(email) {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
 }
@@ -431,9 +648,9 @@ function formatDateFr(isoDate) {
 function messageErreurGrist(e) {
   const txt = (e && e.message) ? e.message : String(e);
   if (/blocked by|access rules|permission|acl/i.test(txt)) {
-    return "Enregistrement refusé : vous ne pouvez saisir une réunion que pour votre propre circonscription.\n(" + txt + ")";
+    return "Action refusée : vous ne pouvez gérer que les réunions de votre propre circonscription.\n(" + txt + ")";
   }
-  return "Erreur lors de l'enregistrement : " + txt;
+  return "Erreur : " + txt;
 }
 
 async function enregistrer() {
@@ -465,7 +682,8 @@ async function enregistrer() {
   }
 
   const blocs = document.querySelectorAll('.partenaire-block');
-  const partenaires = [];
+  const partenairesNouveaux = [];
+  const partenairesAMettreAJour = [];
   blocs.forEach((b, i) => {
     const fonction = b.querySelector('.f-fonction').value.trim();
     const nom = b.querySelector('.f-nom').value.trim();
@@ -487,13 +705,19 @@ async function enregistrer() {
       erreurs.push(`Partenaire ${num} : le téléphone doit contenir 10 chiffres (ou laissez-le vide).`);
     }
 
-    partenaires.push({
+    const donnees = {
       fonction, nom, prenom, email,
       tel: telValide(tel) ? telFormate(tel) : tel,
-    });
+    };
+    const rid = b.dataset.rowId;
+    if (rid) {
+      partenairesAMettreAJour.push({ rowId: parseInt(rid, 10), ...donnees });
+    } else {
+      partenairesNouveaux.push(donnees);
+    }
   });
 
-  if (partenaires.length === 0) {
+  if (partenairesNouveaux.length === 0 && partenairesAMettreAJour.length === 0) {
     erreurs.push('Ajoutez au moins un partenaire.');
   }
 
@@ -510,54 +734,94 @@ async function enregistrer() {
   afficherMessage('Enregistrement en cours...', true);
 
   try {
-    // 1. Créer la ligne de réunion
-    //    (permission : Circonscription doit être celle de l'utilisateur, sauf DSDEN/ADASEN)
-    const resultReunion = await grist.docApi.applyUserActions([
-      ['AddRecord', 'Reunions_ODRT', null, {
-        Nom_ODRT: nomOdrt,
-        Date_ODRT: formatDateFr(dateOdrt),
-        Horaire: horaire,
-        Lieu: lieu,
-        Circonscription: parseInt(circId, 10),
-      }],
-    ]);
-    const reunionRowId = resultReunion.retValues[0];
+    let reunionRowId;
+    const champsReunion = {
+      Nom_ODRT: nomOdrt,
+      Date_ODRT: formatDateFr(dateOdrt),
+      Horaire: horaire,
+      Lieu: lieu,
+      Circonscription: parseInt(circId, 10),
+    };
 
-    // 2. Ajouter les écoles (circo + hors circo) dans Ecoles_invitees.
-    //    La colonne de référence vers Ecoles s'appelle Nom_ecole
-    //    ("Ecole" est une colonne formule, on ne peut pas y écrire).
-    const toutesEcoles = [
-      ...ecolesCircoChoisies.map(e => ({ rowId: e.rowId, hors: false })),
-      ...ecolesHorsChoisies.map(e => ({ rowId: e.rowId, hors: true })),
-    ];
-    if (toutesEcoles.length > 0) {
+    if (reunionEnEditionId) {
+      reunionRowId = reunionEnEditionId;
       await grist.docApi.applyUserActions([
-        ['BulkAddRecord', 'Ecoles_invitees', toutesEcoles.map(() => null), {
-          Reunion: toutesEcoles.map(() => reunionRowId),
-          Nom_ecole: toutesEcoles.map(e => e.rowId),
-          Hors_circonscription: toutesEcoles.map(e => e.hors),
+        ['UpdateRecord', 'Reunions_ODRT', reunionRowId, champsReunion],
+      ]);
+    } else {
+      const resultReunion = await grist.docApi.applyUserActions([
+        ['AddRecord', 'Reunions_ODRT', null, champsReunion],
+      ]);
+      reunionRowId = resultReunion.retValues[0];
+    }
+
+    // Suppression des écoles et partenaires retirés du formulaire
+    if (ecolesInviteesASupprimer.length > 0) {
+      await grist.docApi.applyUserActions([
+        ['BulkRemoveRecord', 'Ecoles_invitees', ecolesInviteesASupprimer],
+      ]);
+    }
+    if (partenairesASupprimer.length > 0) {
+      await grist.docApi.applyUserActions([
+        ['BulkRemoveRecord', 'Partenaires_invites', partenairesASupprimer],
+      ]);
+    }
+
+    // Ajout des nouvelles écoles (celles sans invitationRowId)
+    const ecolesAAjouter = [
+      ...ecolesCircoChoisies.filter(e => !e.invitationRowId).map(e => ({ rowId: e.rowId, hors: false })),
+      ...ecolesHorsChoisies.filter(e => !e.invitationRowId).map(e => ({ rowId: e.rowId, hors: true })),
+    ];
+    if (ecolesAAjouter.length > 0) {
+      await grist.docApi.applyUserActions([
+        ['BulkAddRecord', 'Ecoles_invitees', ecolesAAjouter.map(() => null), {
+          Reunion: ecolesAAjouter.map(() => reunionRowId),
+          Nom_ecole: ecolesAAjouter.map(e => e.rowId),
+          Hors_circonscription: ecolesAAjouter.map(e => e.hors),
         }],
       ]);
     }
 
-    // 3. Ajouter tous les partenaires en une seule action groupée
-    const colValues = {
-      Reunion: partenaires.map(() => reunionRowId),
-      Fonction: partenaires.map(p => p.fonction),
-      Nom: partenaires.map(p => p.nom),
-      Prenom: partenaires.map(p => p.prenom),
-      Email: partenaires.map(p => p.email),
-      Tel: partenaires.map(p => p.tel),
-    };
-    await grist.docApi.applyUserActions([
-      ['BulkAddRecord', 'Partenaires_invites', partenaires.map(() => null), colValues],
-    ]);
+    // Mise à jour des partenaires existants modifiés
+    if (partenairesAMettreAJour.length > 0) {
+      await grist.docApi.applyUserActions([
+        ['BulkUpdateRecord', 'Partenaires_invites',
+          partenairesAMettreAJour.map(p => p.rowId),
+          {
+            Fonction: partenairesAMettreAJour.map(p => p.fonction),
+            Nom: partenairesAMettreAJour.map(p => p.nom),
+            Prenom: partenairesAMettreAJour.map(p => p.prenom),
+            Email: partenairesAMettreAJour.map(p => p.email),
+            Tel: partenairesAMettreAJour.map(p => p.tel),
+          },
+        ],
+      ]);
+    }
 
-    // Aucune relecture des tables Reunions_ODRT / Ecoles_invitees / Partenaires_invites :
-    // un IEN de circonscription n'a que le droit de création sur ces tables.
-    afficherMessage(`✅ Enregistrement effectué avec succès : réunion "${nomOdrt}" avec ${partenaires.length} partenaire(s) et ${toutesEcoles.length} école(s).`, true);
+    // Ajout des nouveaux partenaires
+    if (partenairesNouveaux.length > 0) {
+      await grist.docApi.applyUserActions([
+        ['BulkAddRecord', 'Partenaires_invites', partenairesNouveaux.map(() => null), {
+          Reunion: partenairesNouveaux.map(() => reunionRowId),
+          Fonction: partenairesNouveaux.map(p => p.fonction),
+          Nom: partenairesNouveaux.map(p => p.nom),
+          Prenom: partenairesNouveaux.map(p => p.prenom),
+          Email: partenairesNouveaux.map(p => p.email),
+          Tel: partenairesNouveaux.map(p => p.tel),
+        }],
+      ]);
+    }
+
+    const totalPartenaires = partenairesNouveaux.length + partenairesAMettreAJour.length;
+    const totalEcoles = ecolesCircoChoisies.length + ecolesHorsChoisies.length;
+    const verbe = reunionEnEditionId ? 'mise à jour' : 'enregistrée';
+    afficherMessage(`✅ Réunion "${nomOdrt}" ${verbe} avec succès : ${totalPartenaires} partenaire(s) et ${totalEcoles} école(s).`, true);
     document.getElementById('message').scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    reinitialiserEtatEdition();
     viderFormulaire();
+    document.getElementById('selectReunionExistante').value = '';
+    chargerListeReunions();
   } catch (e) {
     console.error(e);
     afficherMessage(messageErreurGrist(e), false);
@@ -567,12 +831,58 @@ async function enregistrer() {
   }
 }
 
+async function supprimerReunion() {
+  if (!reunionEnEditionId) return;
+  const nom = document.getElementById('nomOdrt').value || 'cette réunion';
+  const ok = window.confirm(
+    `Supprimer définitivement "${nom}" ainsi que tous ses partenaires et écoles associés ?\n` +
+    `Cette action est irréversible.`
+  );
+  if (!ok) return;
+
+  const btn = document.getElementById('btnDeleteReunion');
+  btn.disabled = true;
+  afficherMessage('Suppression en cours...', true);
+
+  try {
+    const [tblEcoles, tblPartenaires] = await Promise.all([
+      grist.docApi.fetchTable('Ecoles_invitees'),
+      grist.docApi.fetchTable('Partenaires_invites'),
+    ]);
+    const idsEcoles = tblEcoles.id.filter((_, i) => tblEcoles.Reunion[i] === reunionEnEditionId);
+    const idsPartenaires = tblPartenaires.id.filter((_, i) => tblPartenaires.Reunion[i] === reunionEnEditionId);
+
+    if (idsEcoles.length > 0) {
+      await grist.docApi.applyUserActions([['BulkRemoveRecord', 'Ecoles_invitees', idsEcoles]]);
+    }
+    if (idsPartenaires.length > 0) {
+      await grist.docApi.applyUserActions([['BulkRemoveRecord', 'Partenaires_invites', idsPartenaires]]);
+    }
+    await grist.docApi.applyUserActions([['RemoveRecord', 'Reunions_ODRT', reunionEnEditionId]]);
+
+    afficherMessage(`✅ "${nom}" a été supprimée.`, true);
+    document.getElementById('message').scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    reinitialiserEtatEdition();
+    viderFormulaire();
+    document.getElementById('selectReunionExistante').value = '';
+    chargerListeReunions();
+  } catch (e) {
+    console.error(e);
+    afficherMessage(messageErreurGrist(e), false);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 document.getElementById('btnSubmit').addEventListener('click', enregistrer);
+document.getElementById('btnDeleteReunion').addEventListener('click', supprimerReunion);
 
 grist.ready({ requiredAccess: 'full' });
 grist.onOptions(() => {}); // pas d'options particulières
 chargerCirconscriptions().catch(e => afficherMessage("Impossible de charger les circonscriptions : " + (e.message || e), false));
 chargerEcoles().catch(e => afficherMessage("Impossible de charger les écoles : " + (e.message || e), false));
+chargerListeReunions();
 ajouterBlocPartenaire();
 afficherSuggestions('rechercheEcoleCirco', 'suggestionsCirco', false, ecolesCircoChoisies, rerenderChipsCirco);
 afficherSuggestions('rechercheEcoleHors', 'suggestionsHors', true, ecolesHorsChoisies, rerenderChipsHors);
