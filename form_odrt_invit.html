@@ -781,12 +781,17 @@ async function enregistrer() {
 
     if (reunionEnEditionId) {
       reunionRowId = reunionEnEditionId;
+      // On ne touche pas au Statut ici : c'est l'IEN qui le fait passer
+      // manuellement à "Finalisée pour publipostage" depuis sa vue Grist
+      // quand il juge la réunion prête, et on ne veut pas écraser ce choix
+      // à chaque modification de détail.
       await grist.docApi.applyUserActions([
         ['UpdateRecord', 'Reunions_ODRT', reunionRowId, champsReunion],
       ]);
     } else {
+      // Nouvelle réunion : on initialise explicitement le Statut à "Brouillon".
       const resultReunion = await grist.docApi.applyUserActions([
-        ['AddRecord', 'Reunions_ODRT', null, champsReunion],
+        ['AddRecord', 'Reunions_ODRT', null, { ...champsReunion, Statut: 'Brouillon' }],
       ]);
       reunionRowId = resultReunion.retValues[0];
     }
