@@ -166,7 +166,7 @@
 </head>
 <body>
 
-<h2 id="titrePage">Saisie d'une réunion ODRT et de ses partenaires à inviter (avec suppr)</h2>
+<h2 id="titrePage">Saisie d'une réunion ODRT et de ses partenaires à inviter</h2>
 <p style="font-size:12px;color:#666;">Les champs marqués d'un * sont obligatoires.</p>
 
 <div class="mode-bar">
@@ -234,6 +234,37 @@
 <button class="btn-submit" id="btnSubmit" type="button">Enregistrer cette réunion et ses partenaires</button>
 <button class="btn-delete-reunion" id="btnDeleteReunion" type="button" style="display:none;">Supprimer définitivement cette réunion</button>
 
+<div id="confirmOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:8px;padding:20px 24px;max-width:380px;width:90%;box-shadow:0 4px 24px rgba(0,0,0,0.25);">
+    <p id="confirmMessage" style="margin:0 0 18px 0;white-space:pre-line;font-size:14px;color:#222;"></p>
+    <div style="display:flex;justify-content:flex-end;gap:10px;">
+      <button id="confirmCancelBtn" type="button" style="padding:6px 14px;border:1px solid #ccc;background:#f5f5f5;border-radius:4px;cursor:pointer;">Annuler</button>
+      <button id="confirmOkBtn" type="button" style="padding:6px 14px;border:none;background:#c0392b;color:#fff;border-radius:4px;cursor:pointer;">OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function confirmerAction(message) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('confirmOverlay');
+    document.getElementById('confirmMessage').textContent = message;
+    overlay.style.display = 'flex';
+    const okBtn = document.getElementById('confirmOkBtn');
+    const cancelBtn = document.getElementById('confirmCancelBtn');
+    const nettoyer = (resultat) => {
+      overlay.style.display = 'none';
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      resolve(resultat);
+    };
+    const onOk = () => nettoyer(true);
+    const onCancel = () => nettoyer(false);
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+  });
+}
+</script>
 <script>
 // Lignes de Circonscriptions qui servent uniquement aux droits d'accès (IEN DSDEN / ADASEN)
 // et ne doivent jamais être proposées comme circonscription d'une réunion.
@@ -519,13 +550,18 @@ async function chargerListeReunions() {
       date: table.Date_ODRT[i],
     }));
     lignes.sort((a, b) => (b.date || 0) - (a.date || 0));
-    lignes.forEach(l => {
-      const opt = document.createElement('option');
-      opt.value = l.rowId;
-      const dateAffichee = l.date ? dateFrDepuisTimestampGrist(l.date) : 'date inconnue';
-      opt.textContent = `${l.nom} — ${dateAffichee}`;
-      select.appendChild(opt);
-    });
+    if (lignes.length > 0) {
+      const groupe = document.createElement('optgroup');
+      groupe.label = '— Modifier une réunion —';
+      lignes.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.rowId;
+        const dateAffichee = l.date ? dateFrDepuisTimestampGrist(l.date) : 'date inconnue';
+        opt.textContent = `${l.nom} — ${dateAffichee}`;
+        groupe.appendChild(opt);
+      });
+      select.appendChild(groupe);
+    }
   } catch (e) {
     console.error(e);
   }
@@ -834,7 +870,7 @@ async function enregistrer() {
 async function supprimerReunion() {
   if (!reunionEnEditionId) return;
   const nom = document.getElementById('nomOdrt').value || 'cette réunion';
-  const ok = window.confirm(
+  const ok = await confirmerAction(
     `Supprimer définitivement "${nom}" ainsi que tous ses partenaires et écoles associés ?\n` +
     `Cette action est irréversible.`
   );
