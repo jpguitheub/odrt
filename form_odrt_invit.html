@@ -167,7 +167,7 @@
 <body>
 
 <h2 id="titrePage">Saisie d'une réunion ODRT et de ses partenaires à inviter</h2>
-<p style="font-size:12px;color:#666;">Les champs marqués d'un * sont obligatoires.</p>
+<p style="font-size:12px;color:#666;">Les champs marqués d'un * sont obligatoires</p>
 
 <div class="mode-bar">
   <label>Que voulez-vous faire ?</label>
@@ -269,6 +269,34 @@ function confirmerAction(message) {
 // Lignes de Circonscriptions qui servent uniquement aux droits d'accès (IEN DSDEN / ADASEN)
 // et ne doivent jamais être proposées comme circonscription d'une réunion.
 const CIRCOS_EXCLUES = ['dsden', 'adasen'];
+
+// Liste des fonctions proposées dans le menu déroulant "Fonction" d'un partenaire.
+// "Autre" est ajouté automatiquement à la fin par ajouterBlocPartenaire().
+// Repli utilisé tant que la table Grist "Fonctions_partenaires" n'a pas encore
+// été lue (ou si elle n'existe pas) : voir chargerFonctionsPartenaires().
+const FONCTIONS_PARTENAIRES_PAR_DEFAUT = [
+  'Maire',
+  'Adjoint(e) au maire',
+  'Président(e) de communauté de communes',
+  'Sous-préfet(ète)',
+  'Conseiller(ère) départemental(e)',
+  'Conseiller(ère) régional(e)',
+  'Représentant(e) DSDEN',
+];
+let fonctionsPartenaires = [...FONCTIONS_PARTENAIRES_PAR_DEFAUT];
+
+async function chargerFonctionsPartenaires() {
+  try {
+    const table = await grist.docApi.fetchTable('Fonctions_partenaires');
+    const valeurs = (table.Fonction || []).map(v => (v || '').trim()).filter(Boolean);
+    if (valeurs.length > 0) {
+      fonctionsPartenaires = [...new Set(valeurs)].sort((a, b) => a.localeCompare(b, 'fr'));
+    }
+  } catch (e) {
+    // La table n'existe pas encore (ou n'est pas accessible) : on garde la liste par défaut.
+    console.warn('Table Fonctions_partenaires introuvable, utilisation de la liste par défaut.', e);
+  }
+}
 
 let circonscriptionsById = {};
 let circoUnique = null;         // rowId si l'utilisateur ne voit qu'une circonscription (IEN de circonscription)
@@ -405,7 +433,15 @@ function ajouterBlocPartenaire(data) {
   div.innerHTML = `
     <div class="titre">Partenaire</div>
     <div class="partenaire-fields">
-      <div><label>Fonction</label><input type="text" class="f-fonction"></div>
+      <div>
+        <label>Fonction</label>
+        <select class="f-fonction-select">
+          <option value="">— Choisir —</option>
+          ${fonctionsPartenaires.map(f => `<option value="${f}">${f}</option>`).join('')}
+          <option value="Autre">Autre</option>
+        </select>
+        <input type="text" class="f-fonction-autre" placeholder="Précisez la fonction" style="display:none;margin-top:4px;">
+      </div>
       <div><label>Nom</label><input type="text" class="f-nom"></div>
       <div><label>Prénom</label><input type="text" class="f-prenom"></div>
       <div><label>E-mail</label><input type="email" class="f-email"></div>
@@ -413,13 +449,30 @@ function ajouterBlocPartenaire(data) {
       <button class="btn-remove" type="button">Retirer</button>
     </div>
   `;
+  const selectFonction = div.querySelector('.f-fonction-select');
+  const autreFonction = div.querySelector('.f-fonction-autre');
+  const majAffichageAutre = () => {
+    autreFonction.style.display = selectFonction.value === 'Autre' ? '' : 'none';
+  };
+  selectFonction.addEventListener('change', majAffichageAutre);
+
   if (data) {
-    div.querySelector('.f-fonction').value = data.fonction || '';
+    const valeurFonction = data.fonction || '';
+    const dejaDansListe = fonctionsPartenaires.some(
+      f => f.trim().toLowerCase() === valeurFonction.toLowerCase()
+    );
+    if (valeurFonction && !dejaDansListe) {
+      selectFonction.value = 'Autre';
+      autreFonction.value = valeurFonction;
+    } else {
+      selectFonction.value = valeurFonction;
+    }
     div.querySelector('.f-nom').value = data.nom || '';
     div.querySelector('.f-prenom').value = data.prenom || '';
     div.querySelector('.f-email').value = data.email || '';
     div.querySelector('.f-tel').value = data.tel || '';
   }
+  majAffichageAutre();
   div.querySelector('.btn-remove').addEventListener('click', () => {
     const rid = div.dataset.rowId;
     if (rid) partenairesASupprimer.push(parseInt(rid, 10));
@@ -720,8 +773,12 @@ async function enregistrer() {
   const blocs = document.querySelectorAll('.partenaire-block');
   const partenairesNouveaux = [];
   const partenairesAMettreAJour = [];
+  const nouvellesFonctions = new Set(); // valeurs "Autre" à ajouter à la liste si elles n'y figurent pas déjà
   blocs.forEach((b, i) => {
-    const fonction = b.querySelector('.f-fonction').value.trim();
+    const fonctionSelect = b.querySelector('.f-fonction-select').value;
+    const fonction = fonctionSelect === 'Autre'
+      ? b.querySelector('.f-fonction-autre').value.trim()
+      : fonctionSelect;
     const nom = b.querySelector('.f-nom').value.trim();
     const prenom = b.querySelector('.f-prenom').value.trim();
     const email = b.querySelector('.f-email').value.trim();
@@ -730,6 +787,15 @@ async function enregistrer() {
     if (!rempli) return; // bloc totalement vide, on l'ignore silencieusement
 
     const num = i + 1;
+    if (fonctionSelect === 'Autre' && !fonction) {
+      erreurs.push(`Partenaire ${num} : merci de préciser la fonction (« Autre » est sélectionné).`);
+    }
+    if (fonctionSelect === 'Autre' && fonction) {
+      const dejaConnue = fonctionsPartenaires.some(
+        f => f.trim().toLowerCase() === fonction.toLowerCase()
+      );
+      if (!dejaConnue) nouvellesFonctions.add(fonction);
+    }
     if (!nom) erreurs.push(`Partenaire ${num} : le nom est obligatoire.`);
     if (!prenom) erreurs.push(`Partenaire ${num} : le prénom est obligatoire.`);
     if (!email) {
@@ -770,6 +836,22 @@ async function enregistrer() {
   afficherMessage('Enregistrement en cours...', true);
 
   try {
+    // Ajoute à la liste partagée les nouvelles fonctions saisies via "Autre",
+    // pour qu'elles soient proposées directement dans le menu déroulant la
+    // prochaine fois (par n'importe quel IEN). On ignore silencieusement
+    // l'échec : au pire, la fonction reste simplement en texte libre.
+    if (nouvellesFonctions.size > 0) {
+      try {
+        await grist.docApi.applyUserActions([
+          ...[...nouvellesFonctions].map(f => ['AddRecord', 'Fonctions_partenaires', null, { Fonction: f }]),
+        ]);
+        fonctionsPartenaires = [...new Set([...fonctionsPartenaires, ...nouvellesFonctions])]
+          .sort((a, b) => a.localeCompare(b, 'fr'));
+      } catch (e) {
+        console.warn("Impossible d'ajouter la/les nouvelle(s) fonction(s) à la liste partagée :", e);
+      }
+    }
+
     let reunionRowId;
     const champsReunion = {
       Nom_ODRT: nomOdrt,
@@ -921,12 +1003,19 @@ document.getElementById('btnDeleteReunion').addEventListener('click', supprimerR
 
 grist.ready({ requiredAccess: 'full' });
 grist.onOptions(() => {}); // pas d'options particulières
-chargerCirconscriptions().catch(e => afficherMessage("Impossible de charger les circonscriptions : " + (e.message || e), false));
-chargerEcoles().catch(e => afficherMessage("Impossible de charger les écoles : " + (e.message || e), false));
-chargerListeReunions();
-ajouterBlocPartenaire();
-afficherSuggestions('rechercheEcoleCirco', 'suggestionsCirco', false, ecolesCircoChoisies, rerenderChipsCirco);
-afficherSuggestions('rechercheEcoleHors', 'suggestionsHors', true, ecolesHorsChoisies, rerenderChipsHors);
+
+async function initialiserWidget() {
+  chargerCirconscriptions().catch(e => afficherMessage("Impossible de charger les circonscriptions : " + (e.message || e), false));
+  chargerEcoles().catch(e => afficherMessage("Impossible de charger les écoles : " + (e.message || e), false));
+  chargerListeReunions();
+  // On attend la liste des fonctions avant de construire le premier bloc
+  // partenaire, pour que son menu déroulant soit déjà à jour.
+  await chargerFonctionsPartenaires();
+  ajouterBlocPartenaire();
+  afficherSuggestions('rechercheEcoleCirco', 'suggestionsCirco', false, ecolesCircoChoisies, rerenderChipsCirco);
+  afficherSuggestions('rechercheEcoleHors', 'suggestionsHors', true, ecolesHorsChoisies, rerenderChipsHors);
+}
+initialiserWidget();
 </script>
 
 </body>
