@@ -98,6 +98,12 @@
   #message.ok { background: #e3f7e9; color: #1a8a3d; display: block; }
   #message.err { background: #fbe6e6; color: #b3261e; display: block; white-space: pre-line; }
   .obligatoire::after { content: " *"; color: #b3261e; }
+  .f-fonction-aide {
+    display: none;
+    color: #6a1b9a;
+    font-size: 12px;
+    margin-top: 4px;
+  }
   .row3 { display: grid; grid-template-columns: 2fr 1fr 1.5fr; gap: 12px; }
   .compteur { font-size: 12px; color: #666; margin-top: 4px; }
 
@@ -169,6 +175,8 @@
 <h2 id="titrePage">Saisie d'une réunion ODRT et de ses partenaires à inviter</h2>
 <p style="font-size:12px;color:#666;">Les champs marqués d'un * sont obligatoires.</p>
 
+<div id="message"></div>
+
 <div class="mode-bar">
   <label>Que voulez-vous faire ?</label>
   <select id="selectReunionExistante">
@@ -193,8 +201,8 @@
   </div>
 </div>
 
-<label>Nom du lieu</label>
-<input id="nomLieu" type="text" placeholder="ex. Mairie, Sous-préfecture (laisser vide si non applicable)">
+<label class="obligatoire">Nom du lieu</label>
+<input id="nomLieu" type="text" placeholder="ex. Mairie, Sous-préfecture">
 
 <div class="row3">
   <div>
@@ -233,7 +241,6 @@
 <button class="btn-add" id="btnAdd" type="button">+ Ajouter un partenaire</button>
 <div class="compteur" id="compteur"></div>
 
-<div id="message"></div>
 <button class="btn-submit" id="btnSubmit" type="button">Enregistrer cette réunion et ses partenaires</button>
 <button class="btn-delete-reunion" id="btnDeleteReunion" type="button" style="display:none;">Supprimer définitivement cette réunion</button>
 
@@ -467,6 +474,7 @@ function ajouterBlocPartenaire(data) {
           <option value="Autre">Autre</option>
         </select>
         <input type="text" class="f-fonction-autre" placeholder="Précisez la fonction" style="display:none;margin-top:4px;">
+        <div class="f-fonction-aide">Cette fonction n'est pas dans la liste : saisissez-la ci-dessus. Elle sera proposée automatiquement la prochaine fois, sauf si une fonction très proche existe déjà dans la liste.</div>
       </div>
       <div><label>Nom</label><input type="text" class="f-nom"></div>
       <div><label>Prénom</label><input type="text" class="f-prenom"></div>
@@ -477,8 +485,11 @@ function ajouterBlocPartenaire(data) {
   `;
   const selectFonction = div.querySelector('.f-fonction-select');
   const autreFonction = div.querySelector('.f-fonction-autre');
+  const aideFonction = div.querySelector('.f-fonction-aide');
   const majAffichageAutre = () => {
-    autreFonction.style.display = selectFonction.value === 'Autre' ? '' : 'none';
+    const estAutre = selectFonction.value === 'Autre';
+    autreFonction.style.display = estAutre ? '' : 'none';
+    aideFonction.style.display = estAutre ? '' : 'none';
   };
   selectFonction.addEventListener('change', majAffichageAutre);
 
@@ -789,6 +800,7 @@ async function enregistrer() {
   } else if (horaireFin <= horaireDebut) {
     erreurs.push("L'heure de fin doit être postérieure à l'heure de début.");
   }
+  if (!nomLieu) erreurs.push("Le nom du lieu est obligatoire.");
   if (!rue) erreurs.push("La rue est obligatoire.");
   if (!cp || !/^\d{5}$/.test(cp)) erreurs.push("Le code postal doit contenir 5 chiffres.");
   if (!ville) erreurs.push("La ville est obligatoire.");
@@ -858,7 +870,7 @@ async function enregistrer() {
 
   if (erreurs.length > 0) {
     afficherMessage('Merci de corriger les points suivants avant d’enregistrer :\n• ' + erreurs.join('\n• '), false);
-    document.getElementById('message').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById('message').scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
 
@@ -973,7 +985,7 @@ async function enregistrer() {
     const totalEcoles = ecolesCircoChoisies.length + ecolesHorsChoisies.length;
     const verbe = reunionEnEditionId ? 'mise à jour' : 'enregistrée';
     afficherMessage(`✅ Réunion "${nomOdrt}" ${verbe} avec succès : ${totalPartenaires} partenaire(s) et ${totalEcoles} école(s).`, true);
-    document.getElementById('message').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById('message').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     reinitialiserEtatEdition();
     viderFormulaire();
@@ -982,7 +994,7 @@ async function enregistrer() {
   } catch (e) {
     console.error(e);
     afficherMessage(messageErreurGrist(e), false);
-    document.getElementById('message').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById('message').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } finally {
     btn.disabled = false;
   }
@@ -1018,7 +1030,7 @@ async function supprimerReunion() {
     await grist.docApi.applyUserActions([['RemoveRecord', 'Reunions_ODRT', reunionEnEditionId]]);
 
     afficherMessage(`✅ "${nom}" a été supprimée.`, true);
-    document.getElementById('message').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById('message').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     reinitialiserEtatEdition();
     viderFormulaire();
