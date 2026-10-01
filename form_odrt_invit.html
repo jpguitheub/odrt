@@ -185,7 +185,7 @@
 </div>
 
 <label class="obligatoire">Nom de l'ODRT</label>
-<input id="nomOdrt" type="text" placeholder="ex. ODRT Châteaudun - session 1">
+<input id="nomOdrt" type="text" placeholder="ex. ODRT Châteauneuf en Thymerais - session 1">
 
 <div class="row2">
   <div>
@@ -732,9 +732,12 @@ async function chargerReunionPourEdition(rowId) {
     document.getElementById('btnSubmit').textContent = "Enregistrer les modifications";
     document.getElementById('btnDeleteReunion').style.display = 'block';
 
-    afficherMessage('', false);
+    // On efface le message "Chargement de la réunion..." affiché plus haut.
+    // Important : ne JAMAIS toucher à message.style.display ici — un style
+    // en ligne prend le pas sur les règles CSS .ok/.err et empêcherait tout
+    // futur message (y compris ceux de l'enregistrement) de s'afficher.
+    document.getElementById('message').textContent = '';
     document.getElementById('message').className = '';
-    document.getElementById('message').style.display = 'none';
   } catch (e) {
     console.error(e);
     afficherMessage("Impossible de charger cette réunion : " + (e.message || e), false);
