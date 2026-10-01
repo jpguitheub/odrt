@@ -167,7 +167,7 @@
 <body>
 
 <h2 id="titrePage">Saisie d'une réunion ODRT et de ses partenaires à inviter</h2>
-<p style="font-size:12px;color:#666;">Les champs marqués d'un * sont obligatoires</p>
+<p style="font-size:12px;color:#666;">Les champs marqués d'un * sont obligatoires.</p>
 
 <div class="mode-bar">
   <label>Que voulez-vous faire ?</label>
@@ -192,6 +192,9 @@
     </div>
   </div>
 </div>
+
+<label>Nom du lieu</label>
+<input id="nomLieu" type="text" placeholder="ex. Mairie, Sous-préfecture (laisser vide si non applicable)">
 
 <div class="row3">
   <div>
@@ -296,6 +299,29 @@ async function chargerFonctionsPartenaires() {
     // La table n'existe pas encore (ou n'est pas accessible) : on garde la liste par défaut.
     console.warn('Table Fonctions_partenaires introuvable, utilisation de la liste par défaut.', e);
   }
+}
+
+// Normalise une fonction pour la comparaison : enlève les accents, met en
+// minuscules, et réduit les espaces multiples. Insensible aussi aux
+// variantes d'encodage Unicode des caractères accentués (NFC vs NFD), qui
+// peuvent rendre deux chaînes visuellement identiques différentes en
+// comparaison stricte.
+function normaliserFonction(s) {
+  return (s || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '') // retire les accents (diacritiques)
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+// Cherche dans la liste chargée une fonction qui correspond (accents et
+// casse ignorés) à la valeur donnée, et renvoie l'orthographe déjà
+// enregistrée si elle existe, sinon null.
+function trouverFonctionExistante(valeur) {
+  const cible = normaliserFonction(valeur);
+  if (!cible) return null;
+  return fonctionsPartenaires.find(f => normaliserFonction(f) === cible) || null;
 }
 
 let circonscriptionsById = {};
@@ -458,14 +484,12 @@ function ajouterBlocPartenaire(data) {
 
   if (data) {
     const valeurFonction = data.fonction || '';
-    const dejaDansListe = fonctionsPartenaires.some(
-      f => f.trim().toLowerCase() === valeurFonction.toLowerCase()
-    );
-    if (valeurFonction && !dejaDansListe) {
+    const correspondance = trouverFonctionExistante(valeurFonction);
+    if (valeurFonction && !correspondance) {
       selectFonction.value = 'Autre';
       autreFonction.value = valeurFonction;
     } else {
-      selectFonction.value = valeurFonction;
+      selectFonction.value = correspondance || valeurFonction;
     }
     div.querySelector('.f-nom').value = data.nom || '';
     div.querySelector('.f-prenom').value = data.prenom || '';
@@ -510,6 +534,7 @@ function viderFormulaire() {
   document.getElementById('dateOdrt').value = '';
   document.getElementById('horaireDebut').value = '';
   document.getElementById('horaireFin').value = '';
+  document.getElementById('nomLieu').value = '';
   document.getElementById('adresseRue').value = '';
   document.getElementById('adresseCp').value = '';
   document.getElementById('adresseVille').value = '';
@@ -643,6 +668,7 @@ async function chargerReunionPourEdition(rowId) {
     const { debut, fin } = parseHoraire(tblReunions.Horaire[idx]);
     document.getElementById('horaireDebut').value = debut;
     document.getElementById('horaireFin').value = fin;
+    document.getElementById('nomLieu').value = tblReunions.Nom_lieu ? (tblReunions.Nom_lieu[idx] || '') : '';
     const { rue, cp, ville } = parseLieu(tblReunions.Lieu[idx]);
     document.getElementById('adresseRue').value = rue;
     document.getElementById('adresseCp').value = cp;
@@ -748,6 +774,7 @@ async function enregistrer() {
   const dateOdrt = document.getElementById('dateOdrt').value;
   const horaireDebut = document.getElementById('horaireDebut').value;
   const horaireFin = document.getElementById('horaireFin').value;
+  const nomLieu = document.getElementById('nomLieu').value.trim();
   const rue = document.getElementById('adresseRue').value.trim();
   const cp = document.getElementById('adresseCp').value.trim();
   const ville = document.getElementById('adresseVille').value.trim();
@@ -776,7 +803,7 @@ async function enregistrer() {
   const nouvellesFonctions = new Set(); // valeurs "Autre" à ajouter à la liste si elles n'y figurent pas déjà
   blocs.forEach((b, i) => {
     const fonctionSelect = b.querySelector('.f-fonction-select').value;
-    const fonction = fonctionSelect === 'Autre'
+    let fonction = fonctionSelect === 'Autre'
       ? b.querySelector('.f-fonction-autre').value.trim()
       : fonctionSelect;
     const nom = b.querySelector('.f-nom').value.trim();
@@ -791,10 +818,16 @@ async function enregistrer() {
       erreurs.push(`Partenaire ${num} : merci de préciser la fonction (« Autre » est sélectionné).`);
     }
     if (fonctionSelect === 'Autre' && fonction) {
-      const dejaConnue = fonctionsPartenaires.some(
-        f => f.trim().toLowerCase() === fonction.toLowerCase()
-      );
-      if (!dejaConnue) nouvellesFonctions.add(fonction);
+      // Insensible aux accents/majuscules/espaces : si une fonction très
+      // proche existe déjà (ex. "Sénateur" déjà en liste et IEN tape
+      // "sénateur"), on réutilise l'orthographe déjà enregistrée au lieu
+      // d'en créer une quasi-doublon.
+      const correspondance = trouverFonctionExistante(fonction);
+      if (correspondance) {
+        fonction = correspondance;
+      } else {
+        nouvellesFonctions.add(fonction);
+      }
     }
     if (!nom) erreurs.push(`Partenaire ${num} : le nom est obligatoire.`);
     if (!prenom) erreurs.push(`Partenaire ${num} : le prénom est obligatoire.`);
@@ -857,6 +890,7 @@ async function enregistrer() {
       Nom_ODRT: nomOdrt,
       Date_ODRT: formatDateFr(dateOdrt),
       Horaire: horaire,
+      Nom_lieu: nomLieu,
       Lieu: lieu,
       Circonscription: parseInt(circId, 10),
     };
