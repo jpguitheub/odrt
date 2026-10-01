@@ -489,7 +489,11 @@ function ajouterBlocPartenaire(data) {
   const majAffichageAutre = () => {
     const estAutre = selectFonction.value === 'Autre';
     autreFonction.style.display = estAutre ? '' : 'none';
-    aideFonction.style.display = estAutre ? '' : 'none';
+    // aideFonction est masqué par une règle CSS de classe (display:none) ;
+    // il faut donc une valeur explicite ("block") pour la réafficher, une
+    // chaîne vide ne ferait que retirer le style en ligne et laisserait la
+    // règle de classe reprendre la main.
+    aideFonction.style.display = estAutre ? 'block' : 'none';
   };
   selectFonction.addEventListener('change', majAffichageAutre);
 
